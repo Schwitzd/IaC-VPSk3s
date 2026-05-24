@@ -11,3 +11,4 @@ nftables_wg_if: wg0
 k3s_version: v1.34
 k3s_api_fqdn: "{{ hostvars['vps'].ansible_host }}"
 kube_context_name: vps
+swap_size: 2G

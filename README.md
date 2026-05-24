@@ -118,7 +118,7 @@ ansible-playbook -i inventory.yaml playbooks/k3s.yaml
 
 ### Argo CD
 
-Because the VPS only has 2 GiB of RAM, it is intentionally kept lightweight and reserved for edge services. Running Argo CD directly on the VPS would provide little benefit while consuming resources better used by workloads. Instead, the VPS K3s cluster is registered as a remote cluster in the Argo CD instance running on the farm cluster. This allows the farm to act as a centralized GitOps control plane while keeping the VPS minimal.
+Because the VPS has small RAM capacity, it is intentionally kept lightweight and reserved for edge services. Running Argo CD directly on the VPS would provide minimal benefit while consuming resources better used by workloads. Instead, the VPS K3s cluster is registered as a remote cluster in the Argo CD instance running on the farm cluster. This allows the farm to act as a centralized GitOps control plane while keeping the VPS minimal.
 
 Argo CD authenticates to the VPS using a dedicated ServiceAccount (`sa-argocd-manager`) and a long-lived ServiceAccount token generated explicitly for this purpose:
 
@@ -134,7 +134,7 @@ The token is generated manually, stored in Argo CD as part of the cluster regist
 
 ### Traefik
 
-This cluster does not use a Kubernetes LoadBalancer, as it runs on a single VPS where the node itself already owns the public IP. Instead, Traefik is configured with `hostPorts` and binds directly to the node's network interfaces on ports 80 and 443. Incoming traffic follows a simple and explicit path, avoiding unnecessary load-balancer layers:
+This cluster does not use a Kubernetes **LoadBalancer**, as it runs on a single VPS where the node itself already owns the public IP. Instead, Traefik is configured with `hostPorts` and binds directly to the node's network interfaces on ports 80 and 443. Routing is handled via the **Gateway API** using `HTTPRoute` resources. Incoming traffic follows a simple and explicit path, avoiding unnecessary load-balancer layers:
 
 ```mermaid
 flowchart LR
@@ -147,6 +147,9 @@ flowchart LR
     Internet --> Traefik --> Service --> Pod
     Internet -.-> LoadBalancer
     LoadBalancer -.-> Traefik
+
+    classDef dotted stroke-dasharray: 5 5
+    class LoadBalancer dotted
 ```
 
 Traefik example of port configuration:
@@ -161,6 +164,16 @@ ports:
     exposedPort: 443
 ```
 
-## To Do
+## Swap
 
-- Move to Gateway API with HTTPRoute
+The VPS is a tiny instance, so a swapfile is provisioned at `/swapfile` by the `host` Ansible playbook to avoid out-of-memory kills under memory pressure.
+
+K3s [supports swap](https://kubernetes.io/docs/concepts/cluster-administration/swap-memory-management/) as of Kubernetes 1.28, so running it alongside a swap-enabled node is a supported and tested configuration.
+
+`vm.swappiness` is set to `10` (via `/etc/sysctl.d/99-swappiness.conf`), which strongly biases the kernel toward keeping processes in RAM and only using swap as a last resort. The default value of `60` would cause premature swapping on a low-memory host, degrading latency for running workloads.
+
+Swap usage per pod can be inspected with:
+
+```sh
+kubectl top pods --show-swap -A
+```

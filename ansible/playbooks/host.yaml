@@ -98,6 +98,50 @@
       notify: Restart unattended-upgrades timer
       tags: unattended-upgrades
 
+    # Swap
+    - name: Allocate swapfile
+      ansible.builtin.command:
+        cmd: fallocate -l {{ swap_size }} /swapfile
+        creates: /swapfile
+      register: swapfile_created
+      tags: swap
+
+    - name: Set swapfile permissions
+      ansible.builtin.file:
+        path: /swapfile
+        owner: root
+        group: root
+        mode: "0600"
+      tags: swap
+
+    - name: Format swapfile
+      ansible.builtin.command:
+        cmd: mkswap /swapfile
+      when: swapfile_created.changed
+      tags: swap
+
+    - name: Enable swap
+      ansible.builtin.command:
+        cmd: swapon /swapfile
+      when: swapfile_created.changed
+      tags: swap
+
+    - name: Set vm.swappiness
+      ansible.posix.sysctl:
+        name: vm.swappiness
+        value: "10"
+        state: present
+        sysctl_file: /etc/sysctl.d/99-swappiness.conf
+        reload: true
+      tags: swap
+
+    - name: Add swapfile to fstab
+      ansible.builtin.lineinfile:
+        path: /etc/fstab
+        line: '/swapfile none swap sw 0 0'
+        state: present
+      tags: swap
+
     - name: Ensure systemd timers for apt are enabled
       ansible.builtin.systemd:
         name: "{{ item }}"

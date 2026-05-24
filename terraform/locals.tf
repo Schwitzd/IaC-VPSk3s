@@ -1,5 +1,5 @@
 locals {
   namespaces = [
-    "pki", "gateway", "secrets", "queue", "stocks"
+    "pki", "gateway", "secrets", "queue", "stocks", "services"
   ]
 }
