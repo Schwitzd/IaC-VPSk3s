@@ -1,0 +1,68 @@
+#!/usr/sbin/nft -f
+
+table inet filter
+flush table inet filter
+
+define WAN_IF      = "{{ nftables_wan_if }}"
+define WG_IF       = "{{ nftables_wg_if }}"
+define POD_V6_CIDR = fd42:10:42::/56
+
+table inet filter {
+    chain input {
+        type filter hook input priority 0; policy drop;
+
+        # Loopback
+        iifname "lo" accept
+
+        # Established / related
+        ct state established,related accept
+
+        # ICMP
+        ip protocol icmp accept
+        ip6 nexthdr ipv6-icmp accept
+
+        # SSH
+        tcp dport 22 accept
+        #tcp dport 6443 accept
+
+        # WireGuard handshake on WAN
+        iifname $WAN_IF udp dport 51821 accept
+
+        ## Allow traffic arriving via the WireGuard tunnel
+        iifname $WG_IF tcp dport 443 accept
+        iifname $WG_IF ip protocol icmp accept
+        iifname $WG_IF ip6 nexthdr ipv6-icmp accept
+
+        # Kubectl via Wireguard tunnel
+        iifname $WG_IF tcp dport 6443 accept
+
+        # RabbitMQ via Wireguard tunnel
+        iifname $WG_IF tcp dport 5671 accept
+
+        ## Kubernetes
+        # Allow pod traffic to reach services running on this node (API server, kubelet, CSI, etc.)
+        iifname "cni0" accept
+
+        # Allow pod-to-pod traffic from the flannel overlay to reach this node
+        iifname "flannel.1" accept
+        iifname "flannel-v6.1" accept
+    }
+
+    chain forward {
+        type filter hook forward priority filter; policy accept;
+        ct state established,related accept
+    }
+
+    chain output {
+        type filter hook output priority 0; policy accept
+    }
+}
+
+table ip6 nat {
+  chain postrouting {
+    type nat hook postrouting priority srcnat; policy accept;
+
+    # K3s/Flannel pod IPv6 ULA -> public IPv6 on WAN (NAT66)
+    oifname $WAN_IF ip6 saddr $POD_V6_CIDR masquerade
+  }
+}

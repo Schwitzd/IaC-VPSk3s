@@ -1,0 +1,11 @@
+---
+collections:
+  - name: https://github.com/Schwitzd/me.ansible_collection.git
+    type: git
+    version: main
+
+  - name: community.docker
+
+roles:
+  - name: githubixx.ansible_role_wireguard
+  - name: geerlingguy.docker

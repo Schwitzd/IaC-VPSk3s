@@ -1,0 +1,13 @@
+vps_bootstrap_user: root
+vps_user: myvps
+vps_ipv6_ula: "fd12:3456:789a:100::2/64"
+vps_kube_context: vps
+mikrotik_ipv6_ula: "fd12:3456:789a:100::1/128"
+mikrotik_wireguard_public_key: ZALJbXQ0KMiHTAVoL6QEhrVu8ztBUPpz3s9whkZ4XzE=
+mikrotik_server_vlan: "fd12:3456:789a:14::/64"
+mikrotik_home_vlan: "fd12:3456:789a:12::/64"
+nftables_wan_if: eth0
+nftables_wg_if: wg0
+k3s_version: v1.34
+k3s_api_fqdn: "{{ hostvars['vps'].ansible_host }}"
+kube_context_name: vps

@@ -1,0 +1,9 @@
+---
+all:
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+  hosts:
+    vps:
+      ansible_host: vps.schwitzd.me
+      ansible_port: 22
+      ansible_ssh_private_key_file: ~/.ssh/vps.schwitzd.me_ed25519

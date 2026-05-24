@@ -1,0 +1,120 @@
+- name: Configure OS level settings
+  hosts: vps
+  remote_user: "{{ vps_user }}"
+  become: true
+
+  roles:
+    - role: schwitzd.collection.sshd_hardening
+      vars:
+        sshd_hardening_allowed_users:
+          - "{{ vps_user }}"
+      tags: ssh
+
+    - role: githubixx.ansible_role_wireguard
+      vars:
+        wireguard_interface: "wg0"
+        wireguard_port: "51821"
+        wireguard_addresses:
+          - "{{ vps_ipv6_ula }}"
+        wireguard_unmanaged_peers:
+          mikrotik:
+            public_key: "{{ mikrotik_wireguard_public_key }}"
+            allowed_ips: "{{ mikrotik_ipv6_ula }}, {{ mikrotik_server_vlan }}, {{ mikrotik_home_vlan }}"
+            persistent_keepalive: 0
+        wireguard_save_config: |
+          true
+          ListenPort = 51821
+      tags: wireguard
+
+  tasks:
+    - name: Install required host utilities
+      ansible.builtin.apt:
+        name:
+          - qemu-guest-agent
+          - unattended-upgrades
+          - tcpdump
+          - nftables
+          - python3-packaging
+          - gpg
+        state: present
+        update_cache: true
+      tags: apt
+
+    - name: Ensure qemu-guest-agent is enabled and running
+      ansible.builtin.service:
+        name: qemu-guest-agent
+        enabled: true
+        state: started
+      tags: apt
+
+    - name: Ensure k3s hosts entry is present
+      ansible.builtin.lineinfile:
+        path: /etc/hosts
+        line: "fd12:3456:789a:14:3161:c474:a553:4ea2 k3s.home.schwitzd.me"
+        state: present
+      tags: hosts
+
+    # Nftables
+    - name: Ensure nftables service is enabled and running
+      ansible.builtin.service:
+        name: nftables
+        enabled: true
+        state: started
+      tags: nft
+
+    - name: Deploy nftables configuration
+      ansible.builtin.template:
+        src: nftables.conf.j2
+        dest: /etc/nftables.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload nftables
+      tags: nft
+
+    # unattended upgrades
+    - name: Enable periodic apt actions (update + unattended upgrades)
+      ansible.builtin.copy:
+        dest: /etc/apt/apt.conf.d/20auto-upgrades
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          APT::Periodic::Update-Package-Lists "1";
+          APT::Periodic::Unattended-Upgrade "1";
+          APT::Periodic::Download-Upgradeable-Packages "1";
+          APT::Periodic::AutocleanInterval "7";
+      become: true
+      notify: Restart unattended-upgrades timer
+      tags: unattended-upgrades
+
+    - name: Configure unattended-upgrades allowed origins
+      ansible.builtin.template:
+        src: 50unattended-upgrades.j2
+        dest: /etc/apt/apt.conf.d/50unattended-upgrades
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart unattended-upgrades timer
+      tags: unattended-upgrades
+
+    - name: Ensure systemd timers for apt are enabled
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        enabled: true
+        state: started
+      loop:
+        - apt-daily.timer
+        - apt-daily-upgrade.timer
+      tags: unattended-upgrades
+
+  handlers:
+    - name: Reload nftables
+      ansible.builtin.service:
+        name: nftables
+        state: reloaded
+
+    - name: Restart unattended-upgrades timer
+      ansible.builtin.systemd:
+        name: apt-daily-upgrade.timer
+        state: restarted

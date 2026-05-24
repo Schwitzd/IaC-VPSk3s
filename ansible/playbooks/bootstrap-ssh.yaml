@@ -1,0 +1,12 @@
+- name: VPS Bootstrap SSH
+  hosts: localhost
+  gather_facts: true
+
+  tasks:
+    - name: Provision SSH key for VPS
+      ansible.builtin.include_role:
+        name: schwitzd.collection.ssh_keygen
+      vars:
+        ssh_keygen_user: "{{ vps_user }}"
+        ssh_keygen_server: "{{ hostvars['vps'].ansible_host }}"
+        ssh_keygen_name: "{{ hostvars['vps'].ansible_host }}_ed25519"

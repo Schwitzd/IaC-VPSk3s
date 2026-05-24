@@ -1,0 +1,27 @@
+- name: VPS Bootstrap User
+  hosts: vps
+  gather_facts: false
+  become: true
+
+  tasks:
+    - name: Ensure VPS user exists
+      ansible.builtin.user:
+        name: "{{ vps_user }}"
+        shell: /bin/bash
+        create_home: true
+        state: present
+
+    - name: Ensure VPS user is in sudo group
+      ansible.builtin.user:
+        name: "{{ vps_user }}"
+        groups: sudo
+        append: true
+
+    - name: Configure passwordless sudo for VPS user
+      ansible.builtin.copy:
+        dest: "/etc/sudoers.d/{{ vps_user }}"
+        content: "{{ vps_user }} ALL=(ALL) NOPASSWD:ALL\n"
+        owner: root
+        group: root
+        mode: "0440"
+        validate: "visudo -cf %s"

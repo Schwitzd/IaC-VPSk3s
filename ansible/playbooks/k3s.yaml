@@ -1,0 +1,95 @@
+- name: Configure Kubernetes
+  hosts: vps
+  remote_user: "{{ vps_user }}"
+
+  roles:
+    - role: schwitzd.collection.apt_3rdparty_repo
+      vars:
+        repos:
+          - name: "helm"
+            repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/helm.gpg] https://packages.buildkite.com/helm-linux/helm-debian/any/ any main"
+            filename: "helm-stable-debian"
+            key_url: "https://packages.buildkite.com/helm-linux/helm-debian/gpgkey"
+            key_file: "helm.gpg"
+          - name: "kubernetes"
+            repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/{{ k3s_version }}/deb/ /"
+            filename: "kubernetes-stable-{{ k3s_version }}"
+            key_url: "https://pkgs.k8s.io/core:/stable:/{{ k3s_version }}/deb/Release.key"
+            key_file: "kubernetes-apt-keyring.gpg"
+      tags: apt
+
+    - role: schwitzd.collection.kubeconfig_context
+      vars:
+        kube_context_name: "{{ kube_context_name }}"
+        kube_api_fqdn: "{{ k3s_api_fqdn }}"
+      tags: k3s-config
+
+  tasks:
+    - name: Ensure K3s required packages are installed
+      ansible.builtin.apt:
+        name:
+          - jq
+          - apt-transport-https
+          - helm
+          - kubectl
+        state: present
+        update_cache: true
+      tags: apt
+
+    # Kube config
+    - name: Ensure ~/.kube directory exists
+      ansible.builtin.file:
+        path: "/home/{{ vps_user }}/.kube"
+        state: directory
+        mode: '0700'
+        owner: "{{ vps_user }}"
+        group: "{{ vps_user }}"
+      tags: k3s-config
+
+    - name: Copy k3s kubeconfig to user home on control-plane
+      ansible.builtin.copy:
+        src: /etc/rancher/k3s/k3s.yaml
+        dest: "/home/{{ vps_user }}/.kube/config"
+        remote_src: true
+        owner: "{{ vps_user }}"
+        group: "{{ vps_user }}"
+        mode: '0600'
+        force: true
+      tags: k3s-config
+
+    - name: Add KUBECONFIG export and kubectl completion to .bashrc
+      ansible.builtin.blockinfile:
+        path: "/home/{{ vps_user }}/.bashrc"
+        marker: "# {mark} ANSIBLE KUBECONFIG AND KUBECTL COMPLETION"
+        block: |
+          export KUBECONFIG="/home/{{ vps_user }}/.kube/config"
+          source <(kubectl completion bash)
+        insertafter: EOF
+        owner: "{{ vps_user }}"
+        group: "{{ vps_user }}"
+        mode: '0644'
+      tags: k3s-config
+
+    - name: Set K3s garbage collection environment variables
+      ansible.builtin.lineinfile:
+        path: /etc/systemd/system/k3s.service.env
+        regexp: "^{{ item.key }}="
+        line: "{{ item.key }}={{ item.value }}"
+        create: true
+      loop:
+        - { key: "K3S_GC_IMAGE_AGE", value: "72h" }
+        - { key: "K3S_GC_IMAGE_CLEANUP_PERIOD", value: "1d" }
+      notify:
+        - Reload systemd
+        - Restart K3s service
+      tags: k3s-post
+  
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+
+    - name: Restart K3s service
+      ansible.builtin.systemd:
+        name: k3s
+        state: restarted
