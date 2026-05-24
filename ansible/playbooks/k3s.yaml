@@ -36,6 +36,25 @@
         update_cache: true
       tags: apt
 
+    # K3s config file
+    - name: Ensure /etc/rancher/k3s directory exists
+      ansible.builtin.file:
+        path: /etc/rancher/k3s
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      tags: k3s-install-config
+
+    - name: Deploy K3s config file for installation
+      ansible.builtin.template:
+       src: k3s-config.yaml.j2
+       dest: /etc/rancher/k3s/config.yaml
+       owner: root
+       group: root
+       mode: '0600'
+      tags: k3s-install-config
+
     # Kube config
     - name: Ensure ~/.kube directory exists
       ansible.builtin.file:

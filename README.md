@@ -9,7 +9,7 @@ The VPS currently runs the following services:
 
 The VPS is connected to my [home network](https://github.com/Schwitzd/IaC-HomeRouter) via a **WireGuard** tunnel over IPv6, using a [Route64 tunnel broker](https://www.schwitzd.me/posts/mikrotik-tunnelbroker-with-route64/).
 
-The underlying host is a small Netcup instance, the [VPS nano G11s 6M](https://www.netcup.com/de/server/vps/vps-nano-g11s-6m), with 2 GiB of RAM.
+The underlying host is a small Netcup instance, the [VPS nano G11s 6M](https://www.netcup.com/de/server/vps/vps-nano-g11s-6m), with 2 GiB of RAM, running **Debian**.
 
 ## Requirements
 
@@ -89,16 +89,16 @@ disable:
   - coredns
   - traefik
 node-ip: 
-  - "2a03:4000:6:d90d:3825:8eff:fe0d:7047"
-  - "188.68.51.201"
+  - "<ipv6-gua>"
+  - "<ipv4-public>"
 node-external-ip:
   - "2a03:4000:6:d90d:3825:8eff:fe0d:7047"
   - "188.68.51.201"
 tls-san:
   - "vps.schwitzd.me"
 secrets-encryption: true
-cluster-cidr: "fd42:10:42::/56,10.42.0.0/16"
-service-cidr: "fd42:10:43::/112,10.43.0.0/16"
+cluster-cidr: "fd42:10:42:00::/56,10.42.0.0/16"
+service-cidr: "fd42:10:43:00::/112,10.43.0.0/16"
 disable-network-policy: true
 kube-proxy-arg:
   - "proxy-mode=nftables"
