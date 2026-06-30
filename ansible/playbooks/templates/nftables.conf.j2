@@ -64,5 +64,8 @@ table ip6 nat {
 
     # K3s/Flannel pod IPv6 ULA -> public IPv6 on WAN (NAT66)
     oifname $WAN_IF ip6 saddr $POD_V6_CIDR masquerade
+
+    # K3s/Flannel pod IPv6 ULA -> home WireGuard tunnel
+    oifname $WG_IF ip6 saddr $POD_V6_CIDR masquerade
   }
 }
