@@ -23,7 +23,6 @@ table inet filter {
 
         # SSH
         tcp dport 22 accept
-        #tcp dport 6443 accept
 
         # WireGuard handshake on WAN
         iifname $WAN_IF udp dport 51821 accept

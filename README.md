@@ -20,31 +20,6 @@ ansible-galaxy collection install -r requirements.yaml --force
 ansible-galaxy role install -r requirements.yaml --force
 ```
 
-### Local vault
-
-This project uses a dual-vault setup. Primitive bootstrap secrets are stored in a local Vault instance on my laptop, while all workload and runtime secrets are stored in the central OpenBao instance.
-
-1. Initialize OpenTofu for Vault in your project directory:
-
-    ```sh
-    cd terraform
-    tofu init
-    ```
-
-1. Create the Vault space:
-
-    ```sh
-      cd iac_vault
-      tofu init
-      tofu apply --var-file=variables.tfvars
-    ```
-
-1. Get the Vault token:
-
-    ```sh
-        tofu output client_token
-    ```
-
 ## Bootstrap
 
 Bootstrap process will:
@@ -131,6 +106,12 @@ kubectl -n kube-system create token sa-argocd-manager --duration=8760h
 ```
 
 The token is generated manually, stored in Argo CD as part of the cluster registration, and rotated manually based on a scheduled reminder.
+
+### External Secrets
+
+Every workload secret is delivered via the External Secrets Operator, authenticated through OpenBao's `kubernetes-vps` backend. See `IaC-SecretsStore`'s [Remote clusters](https://github.com/Schwitzd/IaC-SecretsStore#remote-clusters) setup.
+
+The dedicated `sa-openbao-tokenreview` ServiceAccount and its `system:auth-delegator` binding, which let OpenBao validate ESO's tokens, are deployed via GitOps. The only manual, one-time step is minting the long-lived reviewer JWT and registering this cluster in OpenBao, documented in `IaC-SecretsStore`.
 
 ### Traefik
 
