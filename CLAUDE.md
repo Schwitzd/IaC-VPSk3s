@@ -4,19 +4,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository Purpose
 
-Infrastructure as Code for the **VPS** K3s cluster — a single Netcup VPS node (`vps.schwitzd.me`) running a lightweight K3s cluster. Connected to the home network via WireGuard over IPv6. Uses the same dual-bootstrap pattern as IaC-HomeK3s: OpenTofu provisions essential resources, then Argo CD takes over GitOps reconciliation.
+Infrastructure as Code for the **VPS** K3s cluster — a single Netcup VPS node (`vps.schwitzd.me`, 2 GiB RAM) running a lightweight K3s cluster. Connected to the home network via WireGuard over IPv6. Ansible provisions the host and K3s, then bootstraps FluxCD, which reconciles the cluster from the [GitOps-VPS](https://github.com/Schwitzd/GitOps-VPS) repository. Secrets in that repo are encrypted with SOPS (age).
 
-Services: RabbitMQ (message queue), OpenBao (secrets store), Traefik (using hostPorts, not LoadBalancer), ARK scraper stack.
+Services: RabbitMQ (message queue), Traefik (using hostPorts, not LoadBalancer), ARK scraper stack.
 
 ## Tooling
 
-- **OpenTofu** (not Terraform) — manages Kubernetes namespaces, secrets, RBAC
-- **Ansible** — VPS provisioning, OS hardening, WireGuard, K3s post-config
+- **Ansible** — VPS provisioning, OS hardening, WireGuard, K3s post-config, Flux bootstrap
 - **K3s** — installed manually using the official script
+- **FluxCD** — GitOps controller (source, kustomize and helm controllers only, to save RAM)
+- **SOPS + age** — manifest secret encryption, decrypted in-cluster by Flux using the `sops-age` Secret
 
 ## Common Commands
-
-### Ansible
 
 ```bash
 cd ansible
@@ -33,75 +32,25 @@ ansible-playbook -i inventory.yaml playbooks/host.yaml
 
 # K3s post-installation configuration
 ansible-playbook -i inventory.yaml playbooks/k3s.yaml
-```
 
-### OpenTofu
-
-```bash
-cd terraform
-
-tofu init
-tofu plan --var-file=variables.tfvars
-tofu apply --var-file=variables.tfvars
-tofu apply --var-file=variables.tfvars --target=<resource>
-```
-
-### Vault bootstrap (separate module)
-
-```bash
-cd terraform/iac_vault
-tofu init
-tofu apply --var-file=variables.tfvars
-```
-
-### Register cluster with Argo CD
-
-```bash
-tofu apply --var-file=variables.tfvars --target=kubernetes_manifest.argocd_manager_sa
-kubectl -n kube-system create token sa-argocd-manager --duration=8760h
+# Flux bootstrap (needs GITHUB_TOKEN env var and the age key on the control machine)
+ansible-playbook -i inventory.yaml playbooks/bootstrap-flux.yaml
 ```
 
 ## Architecture
 
-### Terraform Directory (`terraform/`)
-
-Minimal scope — one `.tf` file per concern:
-- `main.tf` — namespace creation (pki, gateway, secrets, queue, stocks)
-- `argocd.tf` — Argo CD ServiceAccount + ClusterRoleBinding for remote cluster management
-- `cert-manager.tf` — Cloudflare API token secret
-- `ark-scraper-collector.tf` — ARK scraper credentials
-- `rabbitmq.tf` — RabbitMQ definitions secret
-- `inputs.tf` / `locals.tf` — variables and namespace list
-
-**Vault sub-module** (`terraform/iac_vault/`): Bootstrap Vault KV-v2 engine, policies, entities, and tokens. Uses modules from `github.com/Schwitzd/terraform-modules`. Applied independently before the main module.
-
-**State**: Local state (`terraform.tfstate`) — no remote backend configured.
-
 ### Ansible Directory (`ansible/`)
 
 - `inventory.yaml` — single host: `vps.schwitzd.me`
-- `group_vars/all/all.yaml` — all variables (network, K3s CIDRs, WireGuard, nftables)
+- `group_vars/all/all.yaml` — all variables (network, K3s CIDRs, WireGuard, nftables, Flux)
 - `playbooks/` — lifecycle-ordered playbooks
-- `playbooks/templates/` — Jinja2 templates for nftables and unattended-upgrades
+- `playbooks/templates/` — Jinja2 templates for K3s config, nftables and unattended-upgrades
 
-### Provider Configuration
+### GitOps
 
-```hcl
-provider "kubernetes" {
-  config_path    = "~/.kube/config"
-  config_context = "vps"    # note: "vps" not "homefarm"
-  insecure       = true
-}
-```
-
-Vault provider uses `var.vault_url` / `var.vault_token` from `variables.tfvars` (gitignored).
-
-### Secrets Pattern
-
-- Secrets pulled from Vault at apply time via `data.vault_kv_secret_v2` data sources
-- `data_wo` (write-only) used for ephemeral Kubernetes secrets — value never stored in state
-- Kubernetes secret names follow `auth-*` prefix convention (e.g., `auth-api-cloudflare`, `auth-ark-rabbitmq`)
-- `variables.tfvars` is gitignored
+- Flux is bootstrapped by `playbooks/bootstrap-flux.yaml` against `Schwitzd/GitOps-VPS`, branch `main`, path `clusters/vps`
+- Workloads, namespaces and encrypted secrets live in `GitOps-VPS`, not in this repository
+- The age private key is never stored in git; it is read from `sops_age_key_file` on the control machine and loaded into the cluster as `flux-system/sops-age`
 
 ### Network
 

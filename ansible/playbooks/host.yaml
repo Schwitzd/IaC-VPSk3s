@@ -1,3 +1,4 @@
+---
 - name: Configure OS level settings
   hosts: vps
   remote_user: "{{ vps_user }}"
@@ -14,6 +15,7 @@
       vars:
         wireguard_interface: "wg0"
         wireguard_port: "51821"
+        wireguard_mtu: "1280"
         wireguard_addresses:
           - "{{ vps_ipv6_ula }}"
         wireguard_unmanaged_peers:
@@ -36,6 +38,7 @@
           - nftables
           - python3-packaging
           - gpg
+          - curl
         state: present
         update_cache: true
       tags: apt
@@ -47,12 +50,54 @@
         state: started
       tags: apt
 
-    - name: Ensure k3s hosts entry is present
-      ansible.builtin.lineinfile:
-        path: /etc/hosts
-        line: "fd12:3456:789a:14:3161:c474:a553:4ea2 k3s.home.schwitzd.me"
+    # DNS
+    - name: Install unbound and DNS tools
+      ansible.builtin.apt:
+        name:
+          - unbound
+          - bind9-dnsutils
         state: present
-      tags: hosts
+        update_cache: true
+      tags: dns
+
+    - name: Deploy unbound configuration
+      ansible.builtin.template:
+        src: unbound.conf.j2
+        dest: /etc/unbound/unbound.conf.d/vps.conf
+        owner: root
+        group: root
+        mode: "0644"
+        validate: unbound-checkconf %s
+      notify: Restart unbound
+      tags: dns
+
+    - name: Ensure unbound is enabled and running
+      ansible.builtin.service:
+        name: unbound
+        enabled: true
+        state: started
+      tags: dns
+
+    - name: Flush handlers so unbound is up before touching resolv.conf
+      ansible.builtin.meta: flush_handlers
+      tags: dns
+
+    - name: Check unbound resolves an IPv4-only name (DNS64)
+      ansible.builtin.command: dig +short AAAA github.com @::1
+      register: dns64_check
+      changed_when: false
+      failed_when: nat64_prefix.split('::')[0].split(':')[:4] | join(':') not in dns64_check.stdout
+      tags: dns
+
+    - name: Point the host resolver at unbound
+      ansible.builtin.copy:
+        dest: /etc/resolv.conf
+        owner: root
+        group: root
+        mode: "0644"
+        content: |
+          nameserver ::1
+      tags: dns
 
     # Nftables
     - name: Ensure nftables service is enabled and running
@@ -69,6 +114,7 @@
         owner: root
         group: root
         mode: "0644"
+        validate: nft -c -f %s
       notify: Reload nftables
       tags: nft
 
@@ -153,6 +199,11 @@
       tags: unattended-upgrades
 
   handlers:
+    - name: Restart unbound
+      ansible.builtin.service:
+        name: unbound
+        state: restarted
+
     - name: Reload nftables
       ansible.builtin.service:
         name: nftables

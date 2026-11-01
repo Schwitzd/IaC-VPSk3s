@@ -1,27 +1,12 @@
 terraform {
   required_providers {
-    kubernetes = {
-      source = "hashicorp/kubernetes"
+    infisical = {
+      source  = "infisical/infisical"
+      version = "~> 0.20"
     }
   }
 }
 
-provider "kubernetes" {
-  config_path    = "~/.kube/config"
-  config_context = "vps"
-  insecure       = true
-}
-
-provider "vault" {
-  address          = var.vault_url
-  token            = var.vault_token
-  skip_child_token = true
-}
-
-provider "helm" {
-  kubernetes = {
-    config_path    = "~/.kube/config"
-    config_context = "vps"
-    insecure       = true
-  }
+provider "infisical" {
+  host = var.infisical_host
 }

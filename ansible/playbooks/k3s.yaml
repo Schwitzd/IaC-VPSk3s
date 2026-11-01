@@ -1,16 +1,13 @@
+---
 - name: Configure Kubernetes
   hosts: vps
   remote_user: "{{ vps_user }}"
+  become: true
 
   roles:
     - role: schwitzd.collection.apt_3rdparty_repo
       vars:
         repos:
-          - name: "helm"
-            repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/helm.gpg] https://packages.buildkite.com/helm-linux/helm-debian/any/ any main"
-            filename: "helm-stable-debian"
-            key_url: "https://packages.buildkite.com/helm-linux/helm-debian/gpgkey"
-            key_file: "helm.gpg"
           - name: "kubernetes"
             repo: "deb [arch=amd64 signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/{{ k3s_version }}/deb/ /"
             filename: "kubernetes-stable-{{ k3s_version }}"
@@ -20,7 +17,6 @@
 
     - role: schwitzd.collection.kubeconfig_context
       vars:
-        kube_context_name: "{{ kube_context_name }}"
         kube_api_fqdn: "{{ k3s_api_fqdn }}"
       tags: k3s-config
 
@@ -30,7 +26,6 @@
         name:
           - jq
           - apt-transport-https
-          - helm
           - kubectl
         state: present
         update_cache: true
@@ -46,13 +41,23 @@
         mode: '0755'
       tags: k3s-install-config
 
+    - name: Deploy resolv.conf used by kubelet (points pods at Unbound on the node)
+      ansible.builtin.copy:
+        dest: /etc/rancher/k3s/resolv.conf
+        owner: root
+        group: root
+        mode: '0644'
+        content: |
+          nameserver {{ ansible_facts.default_ipv6.address }}
+      tags: k3s-install-config
+
     - name: Deploy K3s config file for installation
       ansible.builtin.template:
-       src: k3s-config.yaml.j2
-       dest: /etc/rancher/k3s/config.yaml
-       owner: root
-       group: root
-       mode: '0600'
+        src: k3s-config.yaml.j2
+        dest: /etc/rancher/k3s/config.yaml
+        owner: root
+        group: root
+        mode: '0600'
       tags: k3s-install-config
 
     # Kube config
@@ -102,7 +107,7 @@
         - Reload systemd
         - Restart K3s service
       tags: k3s-post
-  
+
   handlers:
     - name: Reload systemd
       ansible.builtin.systemd:

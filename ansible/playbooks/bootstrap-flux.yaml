@@ -1,0 +1,80 @@
+---
+- name: Bootstrap FluxCD
+  hosts: vps
+  remote_user: "{{ vps_user }}"
+
+  environment:
+    KUBECONFIG: "/home/{{ vps_user }}/.kube/config"
+
+  tasks:
+    - name: Look up the latest Flux release
+      ansible.builtin.uri:
+        url: https://api.github.com/repos/fluxcd/flux2/releases/latest
+        return_content: true
+      register: flux_latest
+      delegate_to: localhost
+      become: false
+      run_once: true
+      when: flux_version == 'latest'
+      tags: flux-cli
+
+    - name: Set the Flux CLI version to install
+      ansible.builtin.set_fact:
+        flux_cli_version: >-
+          {{ (flux_latest.json.tag_name if flux_version == 'latest' else flux_version) | regex_replace('^v', '') }}
+      tags: flux-cli
+
+    - name: Check installed Flux CLI version
+      ansible.builtin.command: flux version --client
+      register: flux_installed
+      changed_when: false
+      failed_when: false
+      tags: flux-cli
+
+    - name: Install Flux CLI
+      ansible.builtin.unarchive:
+        src: "https://github.com/fluxcd/flux2/releases/download/v{{ flux_cli_version }}/flux_{{ flux_cli_version }}_linux_amd64.tar.gz"
+        dest: /usr/local/bin
+        remote_src: true
+        owner: root
+        group: root
+        mode: '0755'
+      become: true
+      when: ('v' ~ flux_cli_version) not in (flux_installed.stdout | default(''))
+      tags: flux-cli
+
+    - name: Ensure flux-system namespace exists
+      ansible.builtin.shell: >
+        kubectl create namespace flux-system --dry-run=client -o yaml
+        | kubectl apply -f -
+      register: flux_ns
+      changed_when: "'created' in flux_ns.stdout"
+      tags: flux-sops
+
+    - name: Create sops-age secret for manifest decryption
+      ansible.builtin.shell: >
+        kubectl -n flux-system create secret generic sops-age
+        --from-file=age.agekey=/dev/stdin --dry-run=client -o yaml
+        | kubectl apply -f -
+      args:
+        stdin: "{{ lookup('ansible.builtin.file', sops_age_key_file) }}"
+      register: flux_sops
+      changed_when: "'created' in flux_sops.stdout or 'configured' in flux_sops.stdout"
+      no_log: true
+      tags: flux-sops
+
+    - name: Bootstrap Flux against GitHub
+      ansible.builtin.command: >
+        flux bootstrap github
+        --owner={{ flux_github_owner }}
+        --repository={{ flux_github_repo }}
+        --branch={{ flux_branch }}
+        --path={{ flux_path }}
+        --personal
+        --private=true
+        --components={{ flux_components }}
+      environment:
+        GITHUB_TOKEN: "{{ lookup('ansible.builtin.env', 'GITHUB_TOKEN') }}"
+      no_log: true
+      changed_when: true
+      tags: flux-bootstrap

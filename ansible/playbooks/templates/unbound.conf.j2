@@ -1,0 +1,35 @@
+server:
+  # IPv6-only host; reachable from the host (::1) and from pods (node address)
+  interface: ::
+  interface-automatic: yes
+  do-ip4: no
+  do-ip6: yes
+  do-udp: yes
+  do-tcp: yes
+
+  access-control: ::/0 refuse
+  access-control: ::1/128 allow
+  access-control: {{ vps_ipv6_ula }} allow
+  access-control: {{ k3s_cluster_cidr_v6 }} allow
+
+  # Synthesize AAAA via the NAT64 gateway only for names without a real AAAA
+  module-config: "dns64 validator iterator"
+  dns64-prefix: {{ nat64_prefix }}
+
+  # Home zone is unsigned and returns private (ULA) addresses
+  domain-insecure: "{{ home_dns_zone }}"
+  private-domain: "{{ home_dns_zone }}"
+
+  hide-identity: yes
+  hide-version: yes
+
+# Home zone through the WireGuard tunnel (MikroTik)
+forward-zone:
+  name: "{{ home_dns_zone }}"
+  forward-addr: {{ mikrotik_ipv6_ula.split('/')[0] }}
+
+forward-zone:
+  name: "."
+{% for upstream in dns_upstreams %}
+  forward-addr: {{ upstream }}
+{% endfor %}

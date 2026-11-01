@@ -1,16 +1,21 @@
-variable "vault_url" {
-  description = "The Vault address"
+variable "infisical_host" {
+  description = "The Infisical host URL"
+  type        = string
+  default     = "https://eu.infisical.com"
+}
+
+variable "infisical_org_id" {
+  description = "The Infisical organization ID the machine identity is created in"
   type        = string
 }
 
-variable "vault_token" {
-  description = "The Vault API token"
+variable "infisical_project_id" {
+  description = "ID of the existing Infisical project, used only to import it into state"
   type        = string
-  sensitive   = true
 }
 
-variable "vault_name" {
-  description = "The Vault name"
-  type        = string
-  sensitive   = true
+variable "trusted_ips" {
+  description = "IPs or CIDR ranges allowed to use the client secret and tokens (paid plans only, null = unrestricted)"
+  type        = list(string)
+  default     = null
 }

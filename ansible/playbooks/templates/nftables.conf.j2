@@ -5,7 +5,6 @@ flush table inet filter
 
 define WAN_IF      = "{{ nftables_wan_if }}"
 define WG_IF       = "{{ nftables_wg_if }}"
-define POD_V6_CIDR = fd42:10:42::/56
 
 table inet filter {
     chain input {
@@ -17,8 +16,7 @@ table inet filter {
         # Established / related
         ct state established,related accept
 
-        # ICMP
-        ip protocol icmp accept
+        # ICMPv6 (required for neighbor discovery and path MTU discovery)
         ip6 nexthdr ipv6-icmp accept
 
         # SSH
@@ -27,44 +25,45 @@ table inet filter {
         # WireGuard handshake on WAN
         iifname $WAN_IF udp dport 51821 accept
 
-        ## Allow traffic arriving via the WireGuard tunnel
+        ## Allow HTTPS via the WireGuard tunnel
         iifname $WG_IF tcp dport 443 accept
-        iifname $WG_IF ip protocol icmp accept
-        iifname $WG_IF ip6 nexthdr ipv6-icmp accept
 
-        # Kubectl via Wireguard tunnel
+        # Allow Kubectl via Wireguard tunnel
         iifname $WG_IF tcp dport 6443 accept
 
-        # RabbitMQ via Wireguard tunnel
-        iifname $WG_IF tcp dport 5671 accept
+        # PostgresQL via Wireguard tunnel
+        iifname $WG_IF tcp dport 5432 accept
 
         ## Kubernetes
         # Allow pod traffic to reach services running on this node (API server, kubelet, CSI, etc.)
         iifname "cni0" accept
 
-        # Allow pod-to-pod traffic from the flannel overlay to reach this node
-        iifname "flannel.1" accept
+        # Allow traffic from the flannel interface to reach this node
         iifname "flannel-v6.1" accept
     }
 
     chain forward {
-        type filter hook forward priority filter; policy accept;
+        type filter hook forward priority filter; policy drop;
+
+        # Return traffic of allowed connections (this also covers ICMPv6 errors such as path MTU discovery)
         ct state established,related accept
+        ct state invalid drop
+
+        # Pods can go anywhere: other pods, the internet (including NAT64) and the home network through WireGuard.
+        # What pods may actually reach is restricted by the Kubernetes NetworkPolicies.
+        iifname "cni0" accept
+
+        # Internet -> pods through the hostPorts: HTTPS only
+        iifname $WAN_IF oifname "cni0" tcp dport 443 accept
+
+        # WireGuard -> pods through the hostPorts: HTTPS and PostgreSQL
+        iifname $WG_IF oifname "cni0" tcp dport { 443, 5432 } accept
+
+        # Log what is left before the policy drops it (rate limited)
+        limit rate 5/minute log prefix "nft-forward-drop: "
     }
 
     chain output {
         type filter hook output priority 0; policy accept
     }
-}
-
-table ip6 nat {
-  chain postrouting {
-    type nat hook postrouting priority srcnat; policy accept;
-
-    # K3s/Flannel pod IPv6 ULA -> public IPv6 on WAN (NAT66)
-    oifname $WAN_IF ip6 saddr $POD_V6_CIDR masquerade
-
-    # K3s/Flannel pod IPv6 ULA -> home WireGuard tunnel
-    oifname $WG_IF ip6 saddr $POD_V6_CIDR masquerade
-  }
 }

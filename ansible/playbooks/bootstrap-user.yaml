@@ -1,3 +1,4 @@
+---
 - name: VPS Bootstrap User
   hosts: vps
   gather_facts: false

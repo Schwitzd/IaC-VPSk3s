@@ -1,14 +1,36 @@
+---
 vps_bootstrap_user: root
 vps_user: myvps
-vps_ipv6_ula: "fd12:3456:789a:100::2/64"
+vps_ipv6_ula: "fd12:3456:789a:100::3/64"
 vps_kube_context: vps
 mikrotik_ipv6_ula: "fd12:3456:789a:100::1/128"
 mikrotik_wireguard_public_key: ZALJbXQ0KMiHTAVoL6QEhrVu8ztBUPpz3s9whkZ4XzE=
 mikrotik_server_vlan: "fd12:3456:789a:14::/64"
 mikrotik_home_vlan: "fd12:3456:789a:12::/64"
-nftables_wan_if: eth0
+nftables_wan_if: "{{ ansible_facts.default_ipv6.interface }}"
 nftables_wg_if: wg0
-k3s_version: v1.34
+k3s_version: v1.36
 k3s_api_fqdn: "{{ hostvars['vps'].ansible_host }}"
 kube_context_name: vps
 swap_size: 2G
+
+# FluxCD
+# "latest" resolves the newest Flux release at run time, or pin a version such as "2.9.6"
+flux_version: latest
+flux_github_owner: Schwitzd
+flux_github_repo: GitOps-VPS
+flux_branch: main
+flux_path: cluster
+# Skip notification/image controllers to save RAM on the VPS
+flux_components: source-controller,kustomize-controller,helm-controller
+sops_age_key_file: ~/.config/sops/age/keys.txt
+
+# DNS (unbound with DNS64, see README)
+dns_upstreams:
+  - 2620:fe::fe
+  - 2620:fe::9
+# nat64.net gateway used for IPv4-only destinations (verify with: dig AAAA ipv4.google.com @2a01:4f9:c010:3f02::1)
+nat64_prefix: "2a01:4f9:c010:3f02:64::/96"
+k3s_cluster_cidr_v6: "fd42:10:42::/56"
+k3s_service_cidr_v6: "fd42:10:43::/112"
+home_dns_zone: home.schwitzd.me
